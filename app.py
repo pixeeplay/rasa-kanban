@@ -13,6 +13,7 @@ HIST = DATA_DIR / "history.json"
 LLM_BASE = os.environ.get("OLLAMA_HOST", "http://100.77.245.32:11434").rstrip("/")
 LLM_FALLBACK = os.environ.get("OLLAMA_FALLBACK_HOST", "http://100.80.237.65:11434").rstrip("/")
 LLM_MODEL = os.environ.get("OLLAMA_MODEL", "gemma4:latest")
+LLM_KEY = os.environ.get("OLLAMA_API_KEY", "")   # clé Ollama online (Authorization Bearer)
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "")
 
 COLS = ["todo", "doing", "done"]
@@ -136,8 +137,9 @@ def _prompt(board_name, cards, context):
     )
 
 async def _ollama(base, prompt):
-    async with httpx.AsyncClient(timeout=45) as c:
-        r = await c.post(f"{base}/api/generate",
+    headers = {"Authorization": f"Bearer {LLM_KEY}"} if LLM_KEY else {}
+    async with httpx.AsyncClient(timeout=120) as c:
+        r = await c.post(f"{base}/api/generate", headers=headers,
                          json={"model": LLM_MODEL, "prompt": prompt, "stream": False})
         r.raise_for_status()
         return r.json().get("response", "")
