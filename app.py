@@ -136,6 +136,24 @@ def _prompt(board_name, cards, context):
         '[{"title":"...","desc":"...","column":"todo|doing|done"}]'
     )
 
+OVH_BASE  = os.environ.get("RASA_OVH_AI_BASE", "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1").rstrip("/")
+OVH_KEY   = os.environ.get("RASA_OVH_AI_KEY", "")
+OVH_MODEL = os.environ.get("RASA_OVH_AI_MODEL", "gpt-oss-120b")
+
+async def _ovh(prompt):
+    """OVH AI Endpoints (OpenAI-compatible). Hebergement europeen, compte Arnaud."""
+    async with httpx.AsyncClient(timeout=120) as c:
+        r = await c.post(f"{OVH_BASE}/chat/completions",
+                         headers={"Authorization": f"Bearer {OVH_KEY}"},
+                         json={"model": OVH_MODEL,
+                               "messages": [{"role": "user", "content": prompt}],
+                               "temperature": 0.3, "max_tokens": 1500})
+        r.raise_for_status()
+        msg = r.json()["choices"][0]["message"]
+        # gpt-oss est un modele a raisonnement : si content est vide, le JSON peut etre
+        # dans le champ de raisonnement.
+        return msg.get("content") or msg.get("reasoning_content") or ""
+
 async def _ollama(base, prompt):
     headers = {"Authorization": f"Bearer {LLM_KEY}"} if LLM_KEY else {}
     async with httpx.AsyncClient(timeout=120) as c:
@@ -175,6 +193,13 @@ async def ai_suggest(request: Request):
     cards = body.get("cards", [])
     context = body.get("context", "")
     prompt = _prompt(bn, cards, context)
+    if OVH_KEY:                                    # 1er choix : OVH AI Endpoints (Europe)
+        try:
+            out = _parse_json(await _ovh(prompt))
+            if out:
+                return {"ok": True, "cards": out, "via": "ovh:" + OVH_MODEL}
+        except Exception:
+            pass
     for base in (LLM_BASE, LLM_FALLBACK):
         try:
             return {"ok": True, "cards": _parse_json(await _ollama(base, prompt)), "via": base}
